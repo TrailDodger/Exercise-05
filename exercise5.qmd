@@ -1,0 +1,748 @@
+---
+title: "Exercise5"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+# Generating Sampling Distributions and CIs
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+f <- "https://raw.githubusercontent.com/difiore/ada-datasets/main/IMDB-movies.csv"
+```
+
+```{r}
+library(readr)
+```
+
+```{r}
+d <- read_csv(f, col_names = TRUE)
+```
+
+```{r}
+head(d)
+```
+
+```{r}
+Filter <- d |>
+  filter(startYear>= 1920 & startYear<= 1979, runtimeMinutes>=60 & runtimeMinutes<=180) |>
+  mutate(decade = paste((trunc(startYear/10) * 10),"'s"))
+
+```
+
+```{r}
+view(Filter$decade)
+```
+
+```{r}
+count(Filter)
+```
+
+### The data has been loaded, read in as a tibble, and filtered so that there are 5651 movies remaining, all of which fall between 1 and 3 hours in length and are from between 1920 and 1979
+
+### Next, we will plot Histograms of the distribution of runtimeMinutes for each decade using facet_wrap()
+
+```{r}
+library(ggplot2)
+```
+
+```{r}
+p <- ggplot(data = Filter, aes(x = runtimeMinutes)) + geom_histogram(fill = "purple", color = "pink") + facet_wrap(~decade) + xlab("Runtime (Minutes)") + ylab("Count")
+```
+
+```{r}
+p
+```
+
+Pretty cool! And purple is my favorite color.
+
+### Next up, we will calculate the pop mean and pop sd for runtimeMinutes for each decade, saving the results in a new data frame called "results"
+
+```{r}
+results <- Filter|>
+  group_by(decade) |>
+  summarise(mean = mean(runtimeMinutes), sd = sd(runtimeMinutes))
+```
+
+```{r}
+results
+```
+
+Looks good!
+
+### Drawing a sample of 100 movies from each without replacement, lets calculate the single sample mean and single sample sd in runtimeMinutes for each decade
+
+```{r}
+creating_samples<- Filter |>
+  group_by(decade) %>%
+  sample_n(100, replace = FALSE)
+```
+
+```{r}
+view(creating_samples)
+```
+
+```{r}
+sample_statistics <- creating_samples |>
+  group_by(decade) |>
+  summarise(sample_mean = mean(runtimeMinutes),sample_sd = sd(runtimeMinutes))
+```
+
+```{r}
+sample_statistics
+```
+
+Checking out the standard error...
+
+```{r}
+se <- sample_statistics$sample_sd/sqrt(length(creating_samples$runtimeMinutes))
+```
+
+```{r}
+se
+```
+
+```{r}
+sample_se <- sample_statistics |>
+  mutate(standard_error = sample_sd / sqrt(length(creating_samples$runtimeMinutes)))
+```
+
+```{r}
+sample_se
+```
+
+```{r}
+results_se <- results |>
+  mutate(standard_error = sd/ sqrt(length(Filter$runtimeMinutes)))
+```
+
+```{r}
+results_se
+```
+
+The standard errors appear to be much larger in the sample than in the actual population. This checks out! Since the number of entries in the actual population is much higher, we would expect a lower standard error.
+
+### Next step is to generate a sampling distribution of mean runtimeMinutes for each decade by drawing 1000 random samples of 100 movies from each movie and calculating the mean and sd for each decade
+
+```{r}
+library(mosaic)
+```
+
+```{r}
+reps <- 1000
+```
+
+```{r}
+n <- 100
+```
+
+```{r}
+install.packages("infer")
+```
+
+```{r}
+library(infer)
+```
+
+```{r}
+samp_dist_mean_sd <- Filter |>
+  group_by(decade) |>
+  nest()|>
+  mutate(samples = map(data, ~rep_sample_n(.x, size=n, reps= reps, replace = FALSE)))|>
+  unnest(samples) |>
+  group_by(decade, replicate)|>
+  summarize(samp_mean = mean(runtimeMinutes), samp_sd = sd(runtimeMinutes), .groups = "drop")
+```
+
+```{r}
+head(samp_dist_mean_sd)
+```
+
+### Next we calculate the mean and the standard deviation of the sampling distribution of sample means for each decade and plot a histogram of the sampling distribution for each decade. 
+
+```{r}
+step9 <- samp_dist_mean_sd |>
+  group_by(decade) |>
+  summarize(samp_mean_mean = mean(samp_mean), samp_mean_sd = sd(samp_mean))
+```
+
+```{r}
+head(step9)
+```
+
+Lets graph it!
+
+```{r}
+mean_plot <- ggplot(data = samp_dist_mean_sd, aes(x = samp_mean, fill = decade)) +
+  geom_histogram(color = "purple") +
+  facet_wrap(~decade) +
+  xlab("Sample Mean of Runtime (Minutes)") +
+  ylab("Count") +
+  labs(title = "Sampling Distribution of Mean Runtime (Minutes) by Decade")
+```
+
+```{r}
+mean_plot
+```
+
+The graphs all have a normal shape/ bell curve/ normal distribution!
+
+### For the last step with this data, we will compare the SE in runtimeminutes for samples of size 100 from each decade as estimated from the first sample of 100 movies, as calculated from the known population standard deviation, and as estimated from the sampling distribution of the sample means for each decade!
+
+se is the standard error from the first sample of 100 movies
+
+```{r}
+se_population <- Filter |>
+  group_by(decade) |>
+  summarize(population_sd = sd(runtimeMinutes), .groups = "drop") |>
+  mutate(se_population = population_sd / sqrt(length(Filter$runtimeMinutes))) |>
+  select(decade, se_population)
+```
+
+```{r}
+se_sampling_distribution <- samp_dist_mean_sd |>
+  group_by(decade) |>
+  summarize(se_sampling_dist = sd(samp_mean), .groups = "drop")
+```
+
+```{r}
+se
+```
+
+```{r}
+se_population
+```
+
+```{r}
+se_sampling_distribution
+```
+
+I realize that I need to make that se for the first 100 samples a tibble...
+
+```{r}
+se_first_sample <- Filter |>
+  group_by(decade) |>
+  summarise(se_first_sample = sd(runtimeMinutes) / sqrt(100))
+```
+
+```{r}
+se_first_sample
+```
+
+Now lets compare!
+
+```{r}
+(se_comparison <- se_first_sample |>
+  left_join(se_population, by = "decade") |>
+  left_join(se_sampling_distribution, by = "decade"))
+```
+
+That first sample has much larger standard errors than the total population, and just slightly larger than that from the sample means for each decade. So, the sample means will vary less from the true population than the first 100 samples (which vary more).
+
+# Challenge 2- Zombies!
+
+First, load in the data and read as a tibble
+
+```{r}
+f1 <- "https://raw.githubusercontent.com/difiore/ada-datasets/main/zombies.csv"
+```
+
+```{r}
+z <- read_csv(f1, col_names = TRUE)
+```
+
+```{r}
+head(z)
+```
+
+We need the population mean and sd for each quantitative variable in the dataset, which are...
+
+```{r}
+pop_stats <- z |>
+  select(height, weight, zombies_killed, years_of_education, age) |>
+  summarise(across(everything(), 
+                   list(Mean = ~mean(., na.rm = TRUE),
+                        SD = ~sqrt(sum((. - mean(., na.rm = TRUE))^2, na.rm = TRUE) / length(na.omit(.))))))
+```
+
+```{r}
+pop_stats
+```
+
+Now lets visualize that data by gender using boxplots!
+
+```{r}
+library(cowplot)
+```
+
+```{r}
+Height <- ggplot(z, aes(x = gender, y = height)) +
+  geom_boxplot() +
+  labs(title = "Height by Gender", y = "Height", x = "Gender")
+```
+
+```{r}
+Weight <- ggplot(z, aes(x = gender, y = weight)) +
+  geom_boxplot() +
+  labs(title = "Weight by Gender", y = "Weight", x = "Gender")
+```
+
+```{r}
+Kills <- ggplot(z, aes(x=gender, y=zombies_killed)) +
+  geom_boxplot()+
+  labs(title = "Zombie Mortality by Gender", y = "Kills", x = "Gender")
+```
+
+```{r}
+Education <- ggplot(z, aes(x= gender, y= years_of_education)) +
+  geom_boxplot()+
+  labs(title = "Zombie Education by Gender", y = "Years of Education", x = "Gender")
+```
+
+```{r}
+Age <- ggplot(z, aes(x=gender, y=age)) +
+  geom_boxplot()+
+  labs(title = "Zombie Age by Gender", y = "Age", x = "Gender") 
+```
+
+```{r}
+plot_grid(Height, Weight, Kills, Education, Age, ncol = 5)
+```
+
+Now for scatter plots, we will compare age to weight and height, color -coding the points to indicate male and female
+
+```{r}
+(Height_scatter <- ggplot(z, aes(x = age, y = height, color = gender)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, aes(color = gender)) +
+  labs(title = "Height vs. Age by Gender", x = "Age", y = "Height") +
+  theme_minimal())
+```
+
+```{r}
+(Weight_scatter <- ggplot(z, aes(x = age, y = weight, color = gender)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, aes(color = gender)) +
+  labs(title = "Weight vs. Age by Gender", x = "Age", y = "Weight") +
+  theme_minimal())
+```
+
+Both the weight and height variables seem to have a positive linear correlation with age, and male zombies seem to have higher average weights and heights than female zombies. The relationship between age and height is stronger than the relationship between age and weight (observersationally).
+
+### Next, we take a look at how the variables are distributed! Normal, or not?
+
+```{r}
+ggplot(z, aes(x = height)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Height Histogram", x = "Height", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(z, aes(sample = height)) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(title = "Height QQ") +
+  theme_minimal()
+```
+
+Height appears to be normal!
+
+```{r}
+ggplot(z, aes(x = weight)) +
+  geom_histogram(bins = 30, fill = "purple", color = "black", alpha = 0.7) +
+  labs(title = "Weight Histogram", x = "Weight", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(z, aes(sample = weight)) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(title = "Weight QQ") +
+  theme_minimal()
+```
+
+Weight also appears to be normal!
+
+```{r}
+ggplot(z, aes(x = zombies_killed)) +
+  geom_histogram(bins = 30, fill = "pink", color = "black", alpha = 0.7) +
+  labs(title = "Kills Histogram", x = "Kills", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(z, aes(sample = height)) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(title = "Kills QQ") +
+  theme_minimal()
+```
+
+The number of zombies killed appears to be a poisson distribution.
+
+```{r}
+ggplot(z, aes(x = age)) +
+  geom_histogram(bins = 30, fill = "orange", color = "black", alpha = 0.7) +
+  labs(title = "Age Histogram", x = "Age", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(z, aes(sample = age)) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(title = "Age QQ") +
+  theme_minimal()
+```
+
+Age looks normally distributed!
+
+```{r}
+ggplot(z, aes(x = years_of_education)) +
+  geom_histogram(bins = 30, fill = "yellow", color = "black", alpha = 0.7) +
+  labs(title = "Education Histogram", x = "Years of Education", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(z, aes(sample = years_of_education)) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(title = "Education QQ") +
+  theme_minimal()
+```
+
+Years of education appears to be a poisson distribution.
+
+### Next up, we will sample one subset of the population, and calculate the mean and sd from that population. 
+
+```{r}
+survivor_sample <- z |>
+  slice_sample(n = 50)
+```
+
+```{r}
+survivor_sample_stats <- survivor_sample |>
+  summarise(
+    height_mean = mean(height, na.rm = TRUE),
+    height_sd = sd(height, na.rm = TRUE),
+    height_se = height_sd / sqrt(n()),
+    height_lower_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100  
+      m <- height_mean
+      se <- height_se
+      lower <- m + qnorm(alpha / 2) * se
+      lower
+    },
+    height_upper_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100 
+      m <- height_mean
+      se <- height_se
+      upper <- m + qnorm(1 - alpha / 2) * se
+      upper
+    },
+    weight_mean = mean(weight, na.rm = TRUE),
+    weight_sd = sd(weight, na.rm = TRUE),
+    weight_se = weight_sd / sqrt(n()),
+    weight_lower_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100 
+      m <- weight_mean
+      se <- weight_se
+      lower <- m + qnorm(alpha / 2) * se
+      lower
+    },
+    weight_upper_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100  
+      m <- weight_mean
+      se <- weight_se
+      upper <- m + qnorm(1 - alpha / 2) * se
+      upper
+    },
+    age_mean = mean(age, na.rm = TRUE),
+    age_sd = sd(age, na.rm = TRUE),
+    age_se = age_sd / sqrt(n()),
+    age_lower_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100  
+      m <- age_mean
+      se <- age_se
+      lower <- m + qnorm(alpha / 2) * se
+      lower
+    },
+    age_upper_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100  
+      m <- age_mean
+      se <- age_se
+      upper <- m + qnorm(1 - alpha / 2) * se
+      upper
+    },
+    zombies_killed_mean = mean(zombies_killed, na.rm = TRUE),
+    zombies_killed_sd = sd(zombies_killed, na.rm = TRUE),
+    zombies_killed_se = zombies_killed_sd / sqrt(n()),
+    zombies_killed_lower_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100  
+      m <- zombies_killed_mean
+      se <- zombies_killed_se
+      lower <- m + qnorm(alpha / 2) * se
+      lower
+    },
+    zombies_killed_upper_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100  
+      m <- zombies_killed_mean
+      se <- zombies_killed_se
+      upper <- m + qnorm(1 - alpha / 2) * se
+      upper
+    },
+    education_mean = mean(years_of_education, na.rm = TRUE),
+    education_sd = sd(years_of_education, na.rm = TRUE),
+    education_se = education_sd / sqrt(n()),
+    education_lower_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100  
+      m <- education_mean
+      se <- education_se
+      lower <- m + qnorm(alpha / 2) * se
+      lower
+    },
+    education_upper_ci = {
+      percent_ci <- 95
+      alpha <- 1 - percent_ci / 100  
+      m <- education_mean
+      se <- education_se
+      upper <- m + qnorm(1 - alpha / 2) * se
+      upper
+    }
+  )
+```
+
+```{r}
+survivor_sample_stats
+```
+
+### An additional 199 samples of 50 from the population!
+
+```{r}
+set.seed(123)
+```
+
+I'm using set.seed(123) so that the random samples are reproducible as the same sequence of random
+
+```{r}
+additional_samples <- replicate(199, survivor_sample %>% sample_n(50, replace = TRUE), simplify = FALSE)
+```
+
+```{r}
+additional_sample_means <- lapply(additional_samples, function(sample) {
+  data.frame(
+    height_mean = mean(sample$height, na.rm = TRUE),
+    weight_mean = mean(sample$weight, na.rm = TRUE),
+    age_mean = mean(sample$age, na.rm = TRUE),
+    zombies_killed_mean = mean(sample$zombies_killed, na.rm = TRUE),
+    education_mean = mean(sample$years_of_education, na.rm = TRUE)
+  )
+})
+```
+
+```{r}
+additional_sample_means_df <- do.call(rbind, additional_sample_means)
+```
+
+```{r}
+print(nrow(additional_sample_means_df))
+```
+
+```{r}
+survivor_sample_means <- data.frame(
+  height_mean = mean(survivor_sample$height, na.rm = TRUE),
+  weight_mean = mean(survivor_sample$weight, na.rm = TRUE),
+  age_mean = mean(survivor_sample$age, na.rm = TRUE),
+  zombies_killed_mean = mean(survivor_sample$zombies_killed, na.rm = TRUE),
+  education_mean = mean(survivor_sample$years_of_education, na.rm = TRUE)
+)
+```
+
+```{r}
+sampling_distribution <- rbind(survivor_sample_means, additional_sample_means_df)
+```
+
+```{r}
+print(nrow(sampling_distribution))
+```
+
+```{r}
+head(sampling_distribution)
+```
+
+```{r}
+sampling_distribution_stats <- sampling_distribution |>
+  summarise(
+    heights_mean = mean(height_mean),
+    height_sd = sd(height_mean),
+    weights_mean = mean(weight_mean),
+    weight_sd = sd(weight_mean),
+    ages_mean = mean(age_mean),
+    age_sd = sd(age_mean),
+    zombies_killed_means = mean(zombies_killed_mean),
+    zombies_killed_sd = sd(zombies_killed_mean),
+    education_means = mean(education_mean),
+    education_sd = sd(education_mean)
+  )
+```
+
+```{r}
+head(sampling_distribution_stats)
+```
+
+Comparing the standard errors from that one sample of 50 to the standard deviation of the 200 samples, its important to remember that standard error would be the standard deviation in he sampling distribution since its drawn from the mean. So, look at what is effectively se to se, in the one sample of 50 is higher for all variables but education, which is slightly lower in the original sample- otherwise consistent with what we would expect from a smaller sample size.
+
+### Now lets plot each variable from the sampling distribution!
+
+```{r}
+ggplot(sampling_distribution, aes(x = height_mean)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Height Histogram", x = "Height", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(sampling_distribution, aes(x = weight_mean)) +
+  geom_histogram(bins = 30, fill = "violet", color = "black", alpha = 0.7) +
+  labs(title = "Weight Histogram", x = "Weight", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(sampling_distribution, aes(x = age_mean)) +
+  geom_histogram(bins = 30, fill = "green", color = "black", alpha = 0.7) +
+  labs(title = "Age Histogram", x = "Age", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(sampling_distribution, aes(x = zombies_killed_mean)) +
+  geom_histogram(bins = 30, fill = "yellow", color = "black", alpha = 0.7) +
+  labs(title = "Zombie Kills Histogram", x = "Zombie Slays", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(sampling_distribution, aes(x = education_mean)) +
+  geom_histogram(bins = 30, fill = "blue", color = "black", alpha = 0.7) +
+  labs(title = "Education Histogram", x = "Education", y = "Frequency") +
+  theme_minimal()
+```
+
+They all look normal! Even the ones that were not previously.
+
+### Next, we get the CIs of the sampling distribution 
+
+```{r}
+sampling_distribution_ci <- sampling_distribution |>
+  summarise(
+    height_lower_ci = quantile(height_mean, 0.025, na.rm = TRUE),
+    height_upper_ci = quantile(height_mean, 0.975, na.rm = TRUE),
+    weight_lower_ci = quantile(weight_mean, 0.025, na.rm = TRUE),
+    weight_upper_ci = quantile(weight_mean, 0.975, na.rm = TRUE),
+    age_lower_ci = quantile(age_mean, 0.025, na.rm = TRUE),
+    age_upper_ci = quantile(age_mean, 0.975, na.rm = TRUE),
+    zombies_killed_lower_ci = quantile(zombies_killed_mean, 0.025, na.rm = TRUE),
+    zombies_killed_upper_ci = quantile(zombies_killed_mean, 0.975, na.rm = TRUE),
+    education_lower_ci = quantile(education_mean, 0.025, na.rm = TRUE),
+    education_upper_ci = quantile(education_mean, 0.975, na.rm = TRUE)
+  )
+```
+
+```{r}
+sampling_distribution_ci
+```
+
+```{r}
+survivor_sample_stats
+```
+
+For height, weight, and education, the confidence intervals are lower, for age and zombies killed the confidence intervals are higher. Interestingly, these differences are only marginal and it seems that there isnt much variation between the one 50 sample we drew and the 200 sampling distribution.
+
+### Final step! Bootstrapping my survivor_sample (original 50)
+
+```{r}
+library(boot)
+```
+
+```{r}
+n_boot <- 1000
+```
+
+```{r}
+perform_bootstrap <- function(data, n_boot) {
+  boot_means <- replicate(n_boot, mean(sample(data, length(data), replace = TRUE)))
+  ci <- quantile(boot_means, c(0.025, 0.975))  
+  return(ci)
+}
+```
+
+```{r}
+variables_to_analyze <- c("height", "weight", "age", "zombies_killed", "years_of_education")
+```
+
+```{r}
+results <- lapply(variables_to_analyze, function(var) {
+  data <- survivor_sample[[var]]
+  ci <- perform_bootstrap(data, n_boot)
+  c(Mean = mean(data), CI_Lower = ci[1], CI_Upper = ci[2])
+})
+```
+
+```{r}
+results_df <- do.call(rbind, results)
+```
+
+```{r}
+colnames(results_df) <- c("Mean", "CI_Lower", "CI_Upper")
+```
+
+```{r}
+results_df <- data.frame(Variable = variables_to_analyze, results_df)
+```
+
+```{r}
+results_df
+```
+
+```{r}
+sampling_distribution_ci
+```
+
+The confidence intervals are smaller for height, weight, roughly the same for age, zombies killed, and education. Overall, there are not many differences despite the very different sampling technique used, where bootstrapping with replacement means we are consistently pulling from and throwing back into the same "hat" of 50 samples from the true population.
